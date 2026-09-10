@@ -10,6 +10,7 @@ import { useMemo } from 'react'
 import { Path } from 'ts-toolbelt/out/Object/Path'
 import { Split } from 'ts-toolbelt/out/String/Split'
 import { api, ApiOutput } from '..'
+import { LEAD_FIELDS, LeadFieldKey } from '../../leads/fields'
 import { ApiModule } from '../utils'
 
 type ActuallyUseMutationOptions = any
@@ -49,6 +50,12 @@ export const useApiMutation = <P extends ApiMutationsPaths>(endpointPath: P) => 
   return useMutationTyped(options as any)
 }
 
+// Derived from the registry so an added field cannot leave a stale optimistic row behind.
+const blankLeadFields = Object.fromEntries(LEAD_FIELDS.map((field) => [field.key, null])) as Record<
+  LeadFieldKey,
+  null
+>
+
 const apiMutationsOptions = (queryClient: QueryClient) =>
   ({
     leads: {
@@ -65,9 +72,7 @@ const apiMutationsOptions = (queryClient: QueryClient) =>
             id: -1,
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
-            jobTitle: null,
-            countryCode: null,
-            companyName: null,
+            ...blankLeadFields,
             message: null,
             emailVerified: null,
             ...input,

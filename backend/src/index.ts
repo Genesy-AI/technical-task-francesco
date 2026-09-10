@@ -1,7 +1,8 @@
 import { PrismaClient } from '@prisma/client'
 import express, { Request, Response } from 'express'
 import { verifyLeadEmails, verifyEmailWithTemporal } from './services/emailVerification'
-import { generateMessageFromTemplate } from './utils/messageGenerator'
+import { generateMessageFromTemplate, renderTemplate } from './utils/messageGenerator'
+import { LeadInput, normalizeLeadInput } from './leads/fields'
 import { runTemporalWorker } from './worker'
 const prisma = new PrismaClient()
 const app = express()
@@ -166,6 +167,36 @@ app.post('/leads/generate-messages', async (req: Request, res: Response) => {
   }
 })
 
+app.post('/leads/preview-message', async (req: Request, res: Response) => {
+  if (!req.body || typeof req.body !== 'object') {
+    return res.status(400).json({ error: 'Request body is required and must be valid JSON' })
+  }
+
+  const { leadId, template } = req.body as { leadId?: number; template?: string }
+
+  if (typeof leadId !== 'number' || !Number.isInteger(leadId)) {
+    return res.status(400).json({ error: 'leadId must be an integer' })
+  }
+
+  if (typeof template !== 'string') {
+    return res.status(400).json({ error: 'template must be a string' })
+  }
+
+  try {
+    const lead = await prisma.lead.findUnique({ where: { id: leadId } })
+
+    if (!lead) {
+      return res.status(404).json({ error: 'No lead found with the provided id' })
+    }
+
+    // Same renderer as generation, so a preview can never promise something Generate will refuse.
+    res.json(renderTemplate(template, lead))
+  } catch (error) {
+    console.error('Error previewing message:', error)
+    res.status(500).json({ error: 'Failed to preview message' })
+  }
+})
+
 app.post('/leads/bulk', async (req: Request, res: Response) => {
   if (!req.body || typeof req.body !== 'object') {
     return res.status(400).json({ error: 'Request body is required and must be valid JSON' })
@@ -178,19 +209,9 @@ app.post('/leads/bulk', async (req: Request, res: Response) => {
   }
 
   try {
-    const validLeads = leads.filter((lead) => {
-      return (
-        lead.firstName &&
-        lead.lastName &&
-        lead.email &&
-        typeof lead.firstName === 'string' &&
-        lead.firstName.trim() &&
-        typeof lead.lastName === 'string' &&
-        lead.lastName.trim() &&
-        typeof lead.email === 'string' &&
-        lead.email.trim()
-      )
-    })
+    // The CSV preview validates the same way, but that is UX: this is the boundary that decides.
+    const normalized = leads.map(normalizeLeadInput)
+    const validLeads = normalized.flatMap((result) => (result.ok ? [result] : []))
 
     if (validLeads.length === 0) {
       return res
@@ -200,8 +221,8 @@ app.post('/leads/bulk', async (req: Request, res: Response) => {
 
     const existingLeads = await prisma.lead.findMany({
       where: {
-        OR: validLeads.map((lead) => ({
-          AND: [{ firstName: lead.firstName.trim() }, { lastName: lead.lastName.trim() }],
+        OR: validLeads.map(({ lead }) => ({
+          AND: [{ firstName: lead.firstName }, { lastName: lead.lastName }],
         })),
       },
     })
@@ -210,27 +231,24 @@ app.post('/leads/bulk', async (req: Request, res: Response) => {
       existingLeads.map((lead) => `${lead.firstName.toLowerCase()}_${(lead.lastName || '').toLowerCase()}`)
     )
 
-    const uniqueLeads = validLeads.filter((lead) => {
+    const uniqueLeads = validLeads.filter(({ lead }) => {
       const key = `${lead.firstName.toLowerCase()}_${lead.lastName.toLowerCase()}`
       return !leadKeys.has(key)
     })
 
     let importedCount = 0
-    const errors: Array<{ lead: any; error: string }> = []
+    const errors: Array<{ lead: LeadInput; error: string }> = []
+    const droppedValues: Array<{ leadName: string; field: string; reason: string }> = []
 
-    for (const lead of uniqueLeads) {
+    for (const { lead, dropped } of uniqueLeads) {
       try {
-        await prisma.lead.create({
-          data: {
-            firstName: lead.firstName.trim(),
-            lastName: lead.lastName.trim(),
-            email: lead.email.trim(),
-            jobTitle: lead.jobTitle ? lead.jobTitle.trim() : null,
-            countryCode: lead.countryCode ? lead.countryCode.trim() : null,
-            companyName: lead.companyName ? lead.companyName.trim() : null,
-          },
-        })
+        await prisma.lead.create({ data: lead })
         importedCount++
+
+        // Only report values dropped from leads that made it in: the rest is noise.
+        for (const { field, reason } of dropped) {
+          droppedValues.push({ leadName: `${lead.firstName} ${lead.lastName}`, field, reason })
+        }
       } catch (error) {
         errors.push({
           lead: lead,
@@ -244,6 +262,7 @@ app.post('/leads/bulk', async (req: Request, res: Response) => {
       importedCount,
       duplicatesSkipped: validLeads.length - uniqueLeads.length,
       invalidLeads: leads.length - validLeads.length,
+      droppedValues,
       errors,
     })
   } catch (error) {

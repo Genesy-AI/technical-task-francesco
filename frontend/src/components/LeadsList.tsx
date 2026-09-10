@@ -1,11 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { FC, useState } from 'react'
+import { FC, Fragment, useState } from 'react'
 import toast from 'react-hot-toast'
 import { api } from '../api'
 import { getApiErrorMessage } from '../api/utils'
 import { LeadsVerifyEmailsOutput } from '../api/types/leads/verifyEmails'
 import { MessageTemplateModal } from './MessageTemplateModal'
 import { CsvImportModal } from './CsvImportModal'
+import { LeadDetailPanel } from './LeadDetailPanel'
 
 const VERIFY_EMAILS_TOAST_ID = 'verify-emails'
 const MAX_NAMED_ERRORS = 3
@@ -25,6 +26,7 @@ export const LeadsList: FC = () => {
   const [isMessageModalOpen, setIsMessageModalOpen] = useState(false)
   const [isEnrichDropdownOpen, setIsEnrichDropdownOpen] = useState(false)
   const [isImportModalOpen, setIsImportModalOpen] = useState(false)
+  const [expandedLeads, setExpandedLeads] = useState<Set<number>>(new Set())
   const queryClient = useQueryClient()
 
   const leads = useQuery({
@@ -32,22 +34,22 @@ export const LeadsList: FC = () => {
     queryFn: async () => api.leads.getMany(),
     retry: false,
   })
-  
 
   const deleteLeadsMutation = useMutation({
     mutationFn: async (ids: number[]) => api.leads.deleteMany({ ids }),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['leads', 'getMany'] })
       setSelectedLeads([])
-      
-      const message = data.deletedCount === 1 
-        ? `Successfully deleted ${data.deletedCount} lead`
-        : `Successfully deleted ${data.deletedCount} leads`
+
+      const message =
+        data.deletedCount === 1
+          ? `Successfully deleted ${data.deletedCount} lead`
+          : `Successfully deleted ${data.deletedCount} leads`
       toast.success(message)
     },
     onError: () => {
       toast.error('Failed to delete leads. Please try again.')
-    }
+    },
   })
 
   const verifyEmailsMutation = useMutation({
@@ -86,7 +88,7 @@ export const LeadsList: FC = () => {
 
   const handleSelectAll = (checked: boolean) => {
     if (checked && leads.data) {
-      setSelectedLeads(leads.data.map(lead => lead.id))
+      setSelectedLeads(leads.data.map((lead) => lead.id))
     } else {
       setSelectedLeads([])
     }
@@ -94,10 +96,18 @@ export const LeadsList: FC = () => {
 
   const handleSelectLead = (leadId: number, checked: boolean) => {
     if (checked) {
-      setSelectedLeads(prev => [...prev, leadId])
+      setSelectedLeads((prev) => [...prev, leadId])
     } else {
-      setSelectedLeads(prev => prev.filter(id => id !== leadId))
+      setSelectedLeads((prev) => prev.filter((id) => id !== leadId))
     }
+  }
+
+  const toggleExpanded = (leadId: number) => {
+    setExpandedLeads((prev) => {
+      const next = new Set(prev)
+      if (!next.delete(leadId)) next.add(leadId)
+      return next
+    })
   }
 
   const handleDeleteSelected = () => {
@@ -110,7 +120,7 @@ export const LeadsList: FC = () => {
     return new Date(dateString).toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'short',
-      day: 'numeric'
+      day: 'numeric',
     })
   }
 
@@ -121,7 +131,6 @@ export const LeadsList: FC = () => {
       </div>
     )
   }
-
 
   const isAllSelected = leads.data && selectedLeads.length === leads.data.length
   const isIndeterminate = selectedLeads.length > 0 && selectedLeads.length < (leads.data?.length || 0)
@@ -137,28 +146,56 @@ export const LeadsList: FC = () => {
                 {selectedLeads.length} selected
               </span>
             )}
-            
+
             <button
               onClick={() => setIsImportModalOpen(true)}
               className="inline-flex items-center px-3 py-2 border border-gray-300 text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
             >
-              <svg className="-ml-1 mr-2 h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
+              <svg
+                className="-ml-1 mr-2 h-4 w-4"
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"
+                />
               </svg>
               Import CSV
             </button>
-            
+
             <div className="relative">
               <button
                 onClick={() => selectedLeads.length > 0 && setIsEnrichDropdownOpen(!isEnrichDropdownOpen)}
                 disabled={selectedLeads.length === 0}
                 className="inline-flex items-center px-3 py-2 border border-gray-300 text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                <svg className="-ml-1 mr-2 h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                <svg
+                  className="-ml-1 mr-2 h-4 w-4"
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M13 10V3L4 14h7v7l9-11h-7z"
+                  />
                 </svg>
                 Enrich
-                <svg className="ml-2 -mr-1 h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg
+                  className="ml-2 -mr-1 h-4 w-4"
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                 </svg>
               </button>
@@ -174,8 +211,19 @@ export const LeadsList: FC = () => {
                       className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
                     >
                       <div className="flex items-center">
-                        <svg className="mr-3 h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                        <svg
+                          className="mr-3 h-4 w-4"
+                          xmlns="http://www.w3.org/2000/svg"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
+                          />
                         </svg>
                         Generate Messages
                       </div>
@@ -188,16 +236,43 @@ export const LeadsList: FC = () => {
                       <div className="flex items-center">
                         {verifyEmailsMutation.isPending ? (
                           <>
-                            <svg className="animate-spin mr-3 h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            <svg
+                              className="animate-spin mr-3 h-4 w-4"
+                              xmlns="http://www.w3.org/2000/svg"
+                              fill="none"
+                              viewBox="0 0 24 24"
+                            >
+                              <circle
+                                className="opacity-25"
+                                cx="12"
+                                cy="12"
+                                r="10"
+                                stroke="currentColor"
+                                strokeWidth="4"
+                              ></circle>
+                              <path
+                                className="opacity-75"
+                                fill="currentColor"
+                                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                              ></path>
                             </svg>
                             Verifying...
                           </>
                         ) : (
                           <>
-                            <svg className="mr-3 h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 12H8m8 0a8 8 0 11-16 0 8 8 0 0116 0zm-8 0V4" />
+                            <svg
+                              className="mr-3 h-4 w-4"
+                              xmlns="http://www.w3.org/2000/svg"
+                              fill="none"
+                              viewBox="0 0 24 24"
+                              stroke="currentColor"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M16 12H8m8 0a8 8 0 11-16 0 8 8 0 0116 0zm-8 0V4"
+                              />
                             </svg>
                             Verify Email
                           </>
@@ -212,8 +287,19 @@ export const LeadsList: FC = () => {
                       className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
                     >
                       <div className="flex items-center">
-                        <svg className="mr-3 h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                        <svg
+                          className="mr-3 h-4 w-4"
+                          xmlns="http://www.w3.org/2000/svg"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
+                          />
                         </svg>
                         Guess Gender
                       </div>
@@ -230,16 +316,43 @@ export const LeadsList: FC = () => {
             >
               {deleteLeadsMutation.isPending ? (
                 <>
-                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  <svg
+                    className="animate-spin -ml-1 mr-2 h-4 w-4 text-white"
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                  >
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                    ></circle>
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                    ></path>
                   </svg>
                   Deleting...
                 </>
               ) : (
                 <>
-                  <svg className="-ml-1 mr-2 h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  <svg
+                    className="-ml-1 mr-2 h-4 w-4"
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                    />
                   </svg>
                   Delete
                 </>
@@ -254,6 +367,9 @@ export const LeadsList: FC = () => {
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50 sticky top-0 z-10">
               <tr>
+                <th scope="col" className="w-10 px-2 py-3 bg-gray-50">
+                  <span className="sr-only">Expand</span>
+                </th>
                 <th scope="col" className="w-12 px-6 py-3 bg-gray-50">
                   <input
                     type="checkbox"
@@ -265,75 +381,132 @@ export const LeadsList: FC = () => {
                     onChange={(e) => handleSelectAll(e.target.checked)}
                   />
                 </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">
+                <th
+                  scope="col"
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50"
+                >
                   Name
                 </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">
+                <th
+                  scope="col"
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50"
+                >
                   Email
                 </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">
+                <th
+                  scope="col"
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50"
+                >
                   Job Title
                 </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">
+                <th
+                  scope="col"
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50"
+                >
                   Company
                 </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">
+                <th
+                  scope="col"
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50"
+                >
                   Country
                 </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">
+                <th
+                  scope="col"
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50"
+                >
                   Message
                 </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">
+                <th
+                  scope="col"
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50"
+                >
                   Created
                 </th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {!leads.isError && leads.data?.map((lead) => (
-                <tr 
-                  key={lead.id} 
-                  className={`hover:bg-gray-50 transition-colors ${
-                    selectedLeads.includes(lead.id) ? 'bg-blue-50' : ''
-                  }`}
-                >
-                  <td className="w-12 px-6 py-4">
-                    <input
-                      type="checkbox"
-                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                      checked={selectedLeads.includes(lead.id)}
-                      onChange={(e) => handleSelectLead(lead.id, e.target.checked)}
-                    />
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm font-medium text-gray-900">
-                      {lead.firstName} {lead.lastName || ''}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-900">{lead.email || '-'} {lead.emailVerified === null ? '❓' : lead.emailVerified ? '✅' : '❌'}</div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-900">{lead.jobTitle || '-'}</div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-900">{lead.companyName || '-'}</div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-900">{lead.countryCode || '-'}</div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="text-sm text-gray-900 max-w-xs truncate" title={lead.message || ''}>
-                      {lead.message || '-'}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {formatDate(lead.createdAt)}
-                  </td>
-                </tr>
-              ))}
+              {!leads.isError &&
+                leads.data?.map((lead) => (
+                  <Fragment key={lead.id}>
+                    <tr
+                      className={`hover:bg-gray-50 transition-colors ${
+                        selectedLeads.includes(lead.id) ? 'bg-blue-50' : ''
+                      }`}
+                    >
+                      <td className="w-10 px-2 py-4">
+                        <button
+                          type="button"
+                          onClick={() => toggleExpanded(lead.id)}
+                          aria-expanded={expandedLeads.has(lead.id)}
+                          aria-label={`${expandedLeads.has(lead.id) ? 'Hide' : 'Show'} details for ${lead.firstName} ${lead.lastName || ''}`.trim()}
+                          className="p-1 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+                        >
+                          <svg
+                            className={`h-4 w-4 transition-transform ${expandedLeads.has(lead.id) ? 'rotate-90' : ''}`}
+                            xmlns="http://www.w3.org/2000/svg"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M9 5l7 7-7 7"
+                            />
+                          </svg>
+                        </button>
+                      </td>
+                      <td className="w-12 px-6 py-4">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          checked={selectedLeads.includes(lead.id)}
+                          onChange={(e) => handleSelectLead(lead.id, e.target.checked)}
+                        />
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm font-medium text-gray-900">
+                          {lead.firstName} {lead.lastName || ''}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-900">
+                          {lead.email || '-'}{' '}
+                          {lead.emailVerified === null ? '❓' : lead.emailVerified ? '✅' : '❌'}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-900">{lead.jobTitle || '-'}</div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-900">{lead.companyName || '-'}</div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-900">{lead.countryCode || '-'}</div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="text-sm text-gray-900 max-w-xs truncate" title={lead.message || ''}>
+                          {lead.message || '-'}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {formatDate(lead.createdAt)}
+                      </td>
+                    </tr>
+                    {expandedLeads.has(lead.id) && (
+                      <tr>
+                        <td colSpan={9} className="p-0">
+                          <LeadDetailPanel lead={lead} />
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                ))}
             </tbody>
           </table>
-          
+
           {leads.isError && (
             <div className="text-center py-12">
               <div className="bg-red-50 border border-red-200 rounded-lg p-6 mx-6">
@@ -352,7 +525,7 @@ export const LeadsList: FC = () => {
               </div>
             </div>
           )}
-          
+
           {!leads.isError && leads.data?.length === 0 && (
             <div className="text-center py-12">
               <div className="text-gray-500">
@@ -367,14 +540,10 @@ export const LeadsList: FC = () => {
       <MessageTemplateModal
         isOpen={isMessageModalOpen}
         onClose={() => setIsMessageModalOpen(false)}
-        selectedLeadIds={selectedLeads}
-        selectedLeadsCount={selectedLeads.length}
+        selectedLeads={leads.data?.filter((lead) => selectedLeads.includes(lead.id)) ?? []}
       />
 
-      <CsvImportModal
-        isOpen={isImportModalOpen}
-        onClose={() => setIsImportModalOpen(false)}
-      />
+      <CsvImportModal isOpen={isImportModalOpen} onClose={() => setIsImportModalOpen(false)} />
     </div>
   )
 }

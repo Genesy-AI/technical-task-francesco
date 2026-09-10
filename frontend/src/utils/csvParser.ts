@@ -1,20 +1,24 @@
 import Papa from 'papaparse'
+import { LEAD_FIELDS, LeadFieldKey, LeadFieldValues, findFieldByCsvHeader } from '../leads/fields'
 
-export interface CsvLead {
+export { isValidEmail } from '../leads/fields'
+
+export type CsvLead = Omit<LeadFieldValues, 'firstName' | 'lastName' | 'email'> & {
   firstName: string
   lastName: string
   email: string
-  jobTitle?: string
-  countryCode?: string
-  companyName?: string
   isValid: boolean
+  /** A required field the row cannot be imported without. */
   errors: string[]
+  /** An optional value that will be dropped. The row still imports. */
+  warnings: string[]
   rowIndex: number
 }
 
-export const isValidEmail = (email: string): boolean => {
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-  return emailRegex.test(email)
+// The registry is keyed by field name while LeadFieldValues types each field on its own, so
+// one cast is needed to bridge them. parse() is what guarantees the value matches the type.
+const setFieldValue = (values: LeadFieldValues, key: LeadFieldKey, value: string | number): void => {
+  ;(values as Record<LeadFieldKey, string | number>)[key] = value
 }
 
 export const parseCsv = (content: string): CsvLead[] => {
@@ -43,60 +47,50 @@ export const parseCsv = (content: string): CsvLead[] => {
     throw new Error('CSV file appears to be empty or contains no valid data')
   }
 
+  // Columns we do not model are ignored on purpose: a CRM export carries plenty of them.
+  const columns = (parseResult.meta.fields ?? []).flatMap((header) => {
+    const field = findFieldByCsvHeader(header)
+    return field ? [{ header, field }] : []
+  })
+
   const data: CsvLead[] = []
 
   parseResult.data.forEach((row, index) => {
     if (Object.values(row).every((value) => !value)) return
 
-    const lead: Partial<CsvLead> = { rowIndex: index + 2 }
+    const rawByKey = new Map<LeadFieldKey, string>(
+      columns.map(({ header, field }) => [field.key, row[header] ?? ''])
+    )
 
-    Object.entries(row).forEach(([header, value]) => {
-      const normalizedHeader = header.toLowerCase().replace(/[^a-z]/g, '')
-      const trimmedValue = value?.trim() || ''
-
-      switch (normalizedHeader) {
-        case 'firstname':
-          lead.firstName = trimmedValue
-          break
-        case 'lastname':
-          lead.lastName = trimmedValue
-          break
-        case 'email':
-          lead.email = trimmedValue
-          break
-        case 'jobtitle':
-          lead.jobTitle = trimmedValue || undefined
-          break
-        case 'countrycode':
-          lead.countryCode = trimmedValue || undefined
-          break
-        case 'companyname':
-          lead.companyName = trimmedValue || undefined
-          break
-      }
-    })
-
+    const values: LeadFieldValues = {}
     const errors: string[] = []
-    if (!lead.firstName?.trim()) {
-      errors.push('First name is required')
-    }
-    if (!lead.lastName?.trim()) {
-      errors.push('Last name is required')
-    }
-    if (!lead.email?.trim()) {
-      errors.push('Email is required')
-    } else if (!isValidEmail(lead.email)) {
-      errors.push('Invalid email format')
+    const warnings: string[] = []
+
+    for (const field of LEAD_FIELDS) {
+      const { value, error } = field.parse(rawByKey.get(field.key) ?? '')
+
+      if (error) {
+        if (field.required) {
+          errors.push(error)
+        } else {
+          warnings.push(`${field.label} ignored: ${error}`)
+        }
+        continue
+      }
+
+      if (value !== null) setFieldValue(values, field.key, value)
     }
 
     data.push({
-      ...lead,
-      firstName: lead.firstName || '',
-      lastName: lead.lastName || '',
-      email: lead.email || '',
+      ...values,
+      firstName: values.firstName ?? '',
+      lastName: values.lastName ?? '',
+      email: values.email ?? '',
       isValid: errors.length === 0,
       errors,
-    } as CsvLead)
+      warnings,
+      rowIndex: index + 2,
+    })
   })
 
   return data

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { generateMessageFromTemplate, Lead } from './messageGenerator'
+import { generateMessageFromTemplate, renderTemplate, Lead } from './messageGenerator'
 
 describe('generateMessageFromTemplate', () => {
   const fullLead: Lead = {
@@ -205,5 +205,67 @@ describe('generateMessageFromTemplate', () => {
       const result = generateMessageFromTemplate(template, emojiLead)
       expect(result).toBe('Hi John 😊 from TechCorp 🚀!')
     })
+  })
+})
+
+describe('newer lead fields', () => {
+  const enrichedLead: Lead = {
+    firstName: 'John',
+    phoneNumber: '+1-280-754-0462',
+    yearsAtCompany: 3,
+    linkedinUrl: 'https://www.linkedin.com/in/john-roe',
+  }
+
+  it('renders the fields added after the first six', () => {
+    const template = 'Reach {firstName} on {phoneNumber} or {linkedinUrl}'
+    expect(generateMessageFromTemplate(template, enrichedLead)).toBe(
+      'Reach John on +1-280-754-0462 or https://www.linkedin.com/in/john-roe'
+    )
+  })
+
+  it('renders a numeric field as text', () => {
+    expect(generateMessageFromTemplate('{yearsAtCompany} years', enrichedLead)).toBe('3 years')
+  })
+
+  it('does not treat zero years as a missing value', () => {
+    expect(
+      generateMessageFromTemplate('{yearsAtCompany} years', { ...enrichedLead, yearsAtCompany: 0 })
+    ).toBe('0 years')
+  })
+
+  it('reports a field the lead has not been enriched with yet', () => {
+    expect(() => generateMessageFromTemplate('Call {phoneNumber}', { firstName: 'John' })).toThrow(
+      'Missing required field: phoneNumber'
+    )
+  })
+})
+
+describe('renderTemplate', () => {
+  const lead: Lead = { firstName: 'John', companyName: 'Tech Corp' }
+
+  it('fills what it can and leaves the rest visible', () => {
+    const result = renderTemplate('Hi {firstName}, call {phoneNumber} about {companyName}', lead)
+
+    expect(result.text).toBe('Hi John, call {phoneNumber} about Tech Corp')
+    expect(result.issues).toEqual([{ field: 'phoneNumber', kind: 'missing' }])
+  })
+
+  it('reports each problem field once, in the order they appear', () => {
+    const result = renderTemplate('{linkedinUrl} {nope} {linkedinUrl} {phoneNumber}', lead)
+
+    expect(result.issues).toEqual([
+      { field: 'linkedinUrl', kind: 'missing' },
+      { field: 'nope', kind: 'unknown' },
+      { field: 'phoneNumber', kind: 'missing' },
+    ])
+  })
+
+  it('reports nothing for a template it can fill completely', () => {
+    expect(renderTemplate('Hi {firstName}', lead)).toEqual({ text: 'Hi John', issues: [] })
+  })
+
+  it('does not let a value containing $& corrupt the output', () => {
+    const result = renderTemplate('Hi {firstName}', { firstName: 'A$&B' })
+    expect(result.text).toBe('Hi A$&B')
   })
 })

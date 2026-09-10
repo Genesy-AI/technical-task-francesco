@@ -66,6 +66,7 @@ John,Doe,john.doe@example.com,Developer,US,Tech Corp`
       companyName: 'Tech Corp',
       isValid: true,
       errors: [],
+      warnings: [],
       rowIndex: 2,
     })
   })
@@ -222,5 +223,76 @@ Jane,Johnson,jane@example.com`
     expect(result[0].lastName).toBe('Doe')
     expect(result[0].email).toBe('john@example.com')
     expect(result[0].isValid).toBe(true)
+  })
+})
+
+describe('parseCsv with the fields added after the first six', () => {
+  it('reads the columns the sample files in docs/ already ship', () => {
+    const csv = `firstName,lastName,email,jobTitle,countryCode,companyName,yearsAtCompany,phoneNumber
+Chad,Smith,chad@example.com,Child psychotherapist,TV,Global Tech,2,+1-280-754-0462x2154`
+
+    const [lead] = parseCsv(csv)
+
+    expect(lead.isValid).toBe(true)
+    expect(lead.yearsAtCompany).toBe(2)
+    expect(lead.phoneNumber).toBe('+1-280-754-0462x2154')
+  })
+
+  it('accepts the alternative headers people actually send', () => {
+    const csv = `First Name,Last Name,Email,Phone,Years at Company,LinkedIn,Company
+John,Doe,john@example.com,+34 611 22 33 44,4,linkedin.com/in/john-doe,Acme`
+
+    const [lead] = parseCsv(csv)
+
+    expect(lead.isValid).toBe(true)
+    expect(lead.phoneNumber).toBe('+34 611 22 33 44')
+    expect(lead.yearsAtCompany).toBe(4)
+    expect(lead.linkedinUrl).toBe('https://www.linkedin.com/in/john-doe')
+    expect(lead.companyName).toBe('Acme')
+  })
+
+  it('imports the lead but drops an unusable optional value, with a warning naming it', () => {
+    const csv = `firstName,lastName,email,yearsAtCompany
+John,Doe,john@example.com,three`
+
+    const [lead] = parseCsv(csv)
+
+    expect(lead.isValid).toBe(true)
+    expect(lead.yearsAtCompany).toBeUndefined()
+    expect(lead.warnings).toEqual(['Years at company ignored: "three" is not a whole number of years'])
+  })
+
+  it('warns once per unusable value rather than failing the row', () => {
+    const csv = `firstName,lastName,email,phoneNumber,linkedinUrl
+John,Doe,john@example.com,call me,https://facebook.com/john`
+
+    const [lead] = parseCsv(csv)
+
+    expect(lead.isValid).toBe(true)
+    expect(lead.errors).toEqual([])
+    expect(lead.warnings).toHaveLength(2)
+  })
+
+  it('keeps a missing required field fatal even when optional ones are fine', () => {
+    const csv = `firstName,lastName,email,phoneNumber
+John,,john@example.com,+34 611 22 33 44`
+
+    const [lead] = parseCsv(csv)
+
+    expect(lead.isValid).toBe(false)
+    expect(lead.errors).toEqual(['Last name is required'])
+    expect(lead.phoneNumber).toBe('+34 611 22 33 44')
+  })
+
+  it('leaves fields absent when the file has no column for them', () => {
+    const csv = `firstName,lastName,email
+John,Doe,john@example.com`
+
+    const [lead] = parseCsv(csv)
+
+    expect(lead.phoneNumber).toBeUndefined()
+    expect(lead.yearsAtCompany).toBeUndefined()
+    expect(lead.linkedinUrl).toBeUndefined()
+    expect(lead.warnings).toEqual([])
   })
 })
