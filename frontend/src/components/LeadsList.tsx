@@ -2,8 +2,23 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { FC, useState } from 'react'
 import toast from 'react-hot-toast'
 import { api } from '../api'
+import { getApiErrorMessage } from '../api/utils'
+import { LeadsVerifyEmailsOutput } from '../api/types/leads/verifyEmails'
 import { MessageTemplateModal } from './MessageTemplateModal'
 import { CsvImportModal } from './CsvImportModal'
+
+const VERIFY_EMAILS_TOAST_ID = 'verify-emails'
+const MAX_NAMED_ERRORS = 3
+
+const describeVerificationErrors = (errors: LeadsVerifyEmailsOutput['errors']): string => {
+  const names = errors.slice(0, MAX_NAMED_ERRORS).map((e) => e.leadName || `Lead ${e.leadId}`)
+  const remaining = errors.length - names.length
+  const subject = `Could not verify ${errors.length} ${errors.length === 1 ? 'lead' : 'leads'}`
+  const who = remaining > 0 ? `${names.join(', ')} and ${remaining} more` : names.join(', ')
+
+  // Every error in a batch usually has the same cause, so one reason is enough to act on.
+  return `${subject} (${who}): ${errors[0].error}`
+}
 
 export const LeadsList: FC = () => {
   const [selectedLeads, setSelectedLeads] = useState<number[]>([])
@@ -37,18 +52,36 @@ export const LeadsList: FC = () => {
 
   const verifyEmailsMutation = useMutation({
     mutationFn: async (ids: number[]) => api.leads.verifyEmails({ leadIds: ids }),
+    onMutate: () => {
+      // A batch can legitimately take a while, so the user needs feedback that outlives the
+      // dropdown closing.
+      toast.loading('Verifying emails...', { id: VERIFY_EMAILS_TOAST_ID })
+    },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['leads', 'getMany'] })
       setIsEnrichDropdownOpen(false)
-      toast.success(
-        data.verifiedCount === 1
-          ? `Verified ${data.verifiedCount} email`
-          : `Verified ${data.verifiedCount} emails`
-      )
+
+      const checked = data.valid + data.invalid
+      if (checked > 0) {
+        toast.success(
+          `Checked ${checked} ${checked === 1 ? 'email' : 'emails'}: ${data.valid} valid, ${data.invalid} invalid`,
+          { id: VERIFY_EMAILS_TOAST_ID }
+        )
+      } else {
+        toast.dismiss(VERIFY_EMAILS_TOAST_ID)
+      }
+
+      // A partial failure used to be reported as a clean success. Show it.
+      if (data.errors.length > 0) {
+        toast.error(describeVerificationErrors(data.errors), { duration: 8000 })
+      }
     },
-    onError: () => {
-      toast.error('Failed to verify emails. Please try again.')
-    }
+    onError: (error) => {
+      toast.error(getApiErrorMessage(error, 'Failed to verify emails. Please try again.'), {
+        id: VERIFY_EMAILS_TOAST_ID,
+        duration: 8000,
+      })
+    },
   })
 
   const handleSelectAll = (checked: boolean) => {
@@ -149,13 +182,26 @@ export const LeadsList: FC = () => {
                     </button>
                     <button
                       onClick={() => verifyEmailsMutation.mutate(selectedLeads)}
-                      className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+                      disabled={verifyEmailsMutation.isPending}
+                      className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     >
                       <div className="flex items-center">
-                        <svg className="mr-3 h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 12H8m8 0a8 8 0 11-16 0 8 8 0 0116 0zm-8 0V4" />
-                        </svg>
-                        Verify Email
+                        {verifyEmailsMutation.isPending ? (
+                          <>
+                            <svg className="animate-spin mr-3 h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            Verifying...
+                          </>
+                        ) : (
+                          <>
+                            <svg className="mr-3 h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 12H8m8 0a8 8 0 11-16 0 8 8 0 0116 0zm-8 0V4" />
+                            </svg>
+                            Verify Email
+                          </>
+                        )}
                       </div>
                     </button>
                     <button

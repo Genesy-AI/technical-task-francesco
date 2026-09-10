@@ -4,10 +4,17 @@ export type LeadsVerifyEmailsInput = {
 
 export type LeadsVerifyEmailsOutput = {
   success: boolean
-  verifiedCount: number
+  /** Leads the batch was asked to verify. */
+  processed: number
+  /** Leads whose email came back deliverable. */
+  valid: number
+  /** Leads whose email came back undeliverable. */
+  invalid: number
+  /** Leads whose verification could not be completed at all. */
+  failed: number
   results: Array<{
     leadId: number
-    emailVerified: boolean | null
+    emailVerified: boolean
   }>
   errors: Array<{
     leadId: number
@@ -15,5 +22,3 @@ export type LeadsVerifyEmailsOutput = {
     error: string
   }>
 }
-
-
